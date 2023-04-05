@@ -1,3 +1,9 @@
+#ifdef DEBUG
+#define debug(str) printf("%s\n",str)
+#else
+#define debug(str) /* do nothing */
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +29,7 @@ typedef struct iNode
     char *filename;
     int owner_id;
     Block *blocks;
-    struct iNode *next;
+    struct iNode *nextINode;
     int available;
 } INode;
 
@@ -42,8 +48,9 @@ typedef struct user
 {
     int u_id;
     char *username;
-    INode *owned_files;
+    INode *owned_files; // not in use now
     INodeLink *shared_files;
+    struct user *nextUser;
 } User;
 
 typedef struct user_manager
@@ -53,88 +60,65 @@ typedef struct user_manager
 } UserManager;
 
 // -------------------------------------------------------------------------------------------
+char *concatTwoStr(char *str1, char *str2)
+{
+    char *result = malloc(strlen(str1) + strlen(str2) + 1); //+1 for the zero-terminator
+    strcpy(result, str1);
+    strcat(result, str2);
+    return result;
+}
+
+char *concatThreeStr(char *str1, char *str2, char *str3)
+{
+    char *result = malloc(strlen(str1) + strlen(str2) + strlen(str3) + 1); //+1 for the zero-terminator
+    strcpy(result, str1);
+    strcat(result, str2);
+    strcat(result, str3);
+    return result;
+}
+
+char *assignValue(char *str, char *value)
+{
+    str = (char *)malloc(sizeof(char) * (strlen(value) + 1));
+    strcpy(str, value);
+    return str;
+}
+
 void addNewUser(char *userName, UserManager *um)
 {
     int index = um->user_count;
-    um->users = (User *)realloc(um->users, sizeof(User) * (index + 1));
-    um->users[index].username = (char *)malloc(sizeof(char) * (strlen(userName) + 1));
-    strcpy(um->users[index].username, userName);
-    um->users[index].u_id = index;
-    um->users[index].owned_files = NULL;
-    um->users[index].shared_files = NULL;
+    User *newUser = (User *)malloc(sizeof(User));
+    newUser->username = assignValue(newUser->username, userName);
+    newUser->u_id = index;
+    newUser->owned_files = NULL;
+    newUser->shared_files = NULL;
+    newUser->nextUser = um->users;
+    um->users = newUser;
     um->user_count++;
 }
 
 void printAllUsers(UserManager *um)
 {
-    for (int i = 0; i < um->user_count; i++)
+    User *user = um->users;
+    while (user != NULL)
     {
-        printf("User %d: %s\n", um->users[i].u_id, um->users[i].username);
+        printf("User: %s, id: %d\n", user->username, user->u_id);
+        user = user->nextUser;
     }
 }
 
 int findUserIdByName(char *userName, UserManager *um)
 {
-    for (int i = 0; i < um->user_count; i++)
+    User *user = um->users;
+    while (user != NULL)
     {
-        if (strcmp(um->users[i].username, userName) == 0)
+        if (strcmp(user->username, userName) == 0)
         {
-            return um->users[i].u_id;
+            return user->u_id;
         }
+        user = user->nextUser;
     }
     return -1;
-}
-
-struct block *saveFileToBlocks(char *composeFileName, BlockManager *bm);
-void saveFileMetaToInode(char *composeFileName, char *fileName, char *userDir, UserManager *um, INodeManager *im, BlockManager *bm)
-{
-    int index = im->iNode_count;
-    im->iNodes = (INode *)realloc(im->iNodes, sizeof(INode) * (index + 1));
-    im->iNodes[index].filename = (char *)malloc(sizeof(char) * (strlen(fileName) + 1));
-    strcpy(im->iNodes[index].filename, fileName);
-    if (index > 0)
-    {
-        im->iNodes[index - 1].next = &im->iNodes[index];
-    }
-
-    im->iNodes[index].owner_id = findUserIdByName(userDir, um);
-    im->iNodes[index].blocks = saveFileToBlocks(composeFileName, bm);
-    im->iNodes[index].next = NULL;
-    im->iNodes[index].available = 1;
-    im->iNode_count++;
-}
-
-void saveUserFiles(char *workdir, char *userDir, UserManager *um, BlockManager *bm, INodeManager *im)
-{
-    addNewUser(userDir, um);
-    char *composeDir = (char *)malloc(sizeof(char) * (strlen(workdir) + strlen(userDir) + 2));
-    strcpy(composeDir, workdir);
-    strcat(composeDir, "/");
-    strcat(composeDir, userDir);
-    DIR *directory = opendir(composeDir);
-    if (directory == NULL)
-    {
-        printf("In saveUserFiles. Can't open this user dir.\n");
-    }
-    else
-    {
-        struct dirent *entry;
-        while ((entry = readdir(directory)) != NULL)
-        {
-            if (entry->d_type == DT_REG)
-            {
-                char *composeFileName = (char *)malloc(sizeof(char) * (strlen(composeDir) + strlen(entry->d_name) + 2));
-                strcpy(composeFileName, composeDir);
-                strcat(composeFileName, "/");
-                strcat(composeFileName, entry->d_name);
-                saveFileMetaToInode(composeFileName, entry->d_name, userDir, um, im, bm);
-            }
-            else
-            {
-                // printf("Not File: %s\n", entry->d_name);
-            }
-        }
-    }
 }
 
 struct block *saveFileToBlocks(char *composeFileName, BlockManager *bm)
@@ -152,29 +136,65 @@ struct block *saveFileToBlocks(char *composeFileName, BlockManager *bm)
         int flag = 0;
         while (fgets(content, BLOCK_SIZE, fp) != NULL)
         {
-            bm->blocks = (Block *)realloc(bm->blocks, sizeof(Block) * (index + 1));
-            bm->blocks[index].content = (char *)malloc(sizeof(char) * (strlen(content) + 1));
-            strcpy(bm->blocks[index].content, content);
-            bm->blocks[index].nextInfile = NULL;
-            bm->blocks[index].nextInBlockManager = NULL;
-            if (index > 0)
-            {
-                bm->blocks[index - 1].nextInBlockManager = &bm->blocks[index];
-            }
+            Block *newBlock = (Block *)malloc(sizeof(Block));
+            newBlock->content = assignValue(newBlock->content, content);
+            newBlock->nextInfile = NULL;
             if (flag > 0)
             {
-                bm->blocks[index - 1].nextInfile = &bm->blocks[index];
+                bm->blocks->nextInfile = newBlock;
             }
             else
             {
-                headBlock = &bm->blocks[index];
+                headBlock = newBlock;
                 flag = 1;
             }
+            newBlock->nextInBlockManager = bm->blocks;
+            bm->blocks = newBlock;
             index++;
         }
         bm->block_count = index;
     }
     return headBlock;
+}
+
+void saveFileMetaToInode(char *composeFileName, char *fileName, char *userDir, UserManager *um, INodeManager *im, BlockManager *bm)
+{
+    int index = im->iNode_count;
+    INode *newINode = (INode *)malloc(sizeof(INode));
+    newINode->filename = assignValue(newINode->filename, fileName);
+    newINode->owner_id = findUserIdByName(userDir, um);
+    newINode->blocks = saveFileToBlocks(composeFileName, bm);
+    newINode->available = 1;
+    newINode->nextINode = im->iNodes;
+    im->iNodes = newINode;
+    im->iNode_count++;
+}
+
+void saveUserFiles(char *workdir, char *userDir, UserManager *um, BlockManager *bm, INodeManager *im)
+{
+    addNewUser(userDir, um);
+    char *composeDir = concatThreeStr(workdir, "/", userDir);
+    DIR *directory = opendir(composeDir);
+    if (directory == NULL)
+    {
+        printf("In saveUserFiles. Can't open the user's dir.\n");
+    }
+    else
+    {
+        struct dirent *entry;
+        while ((entry = readdir(directory)) != NULL)
+        {
+            if (entry->d_type == DT_REG)
+            {
+                char *composeFileName = concatThreeStr(composeDir, "/", entry->d_name);
+                saveFileMetaToInode(composeFileName, entry->d_name, userDir, um, im, bm);
+            }
+            else
+            {
+                // printf("Not File: %s\n", entry->d_name);
+            }
+        }
+    }
 }
 
 void saveWorkDir(char *workDir, UserManager *userManager, BlockManager *blockManager, INodeManager *inodeManager)
@@ -203,16 +223,17 @@ void saveWorkDir(char *workDir, UserManager *userManager, BlockManager *blockMan
 
 Block *findBlockHeadByFileName(int user_id, char *fileName, INodeManager *im)
 {
-    for (int i = 0; i < im->iNode_count; i++)
+    INode *iNode = im->iNodes;
+    while (iNode != NULL)
     {
-        if (strcmp(im->iNodes[i].filename, fileName) == 0 && im->iNodes[i].owner_id == user_id)
+        if (iNode->owner_id == user_id && strcmp(iNode->filename, fileName) == 0)
         {
-            return im->iNodes[i].blocks;
+            return iNode->blocks;
         }
+        iNode = iNode->nextINode;
     }
     return NULL;
 }
-
 
 void printFile(char *workDir, char *userName, char *fileName, UserManager *um, INodeManager *im)
 {
@@ -225,32 +246,37 @@ void printFile(char *workDir, char *userName, char *fileName, UserManager *um, I
     else
     {
         Block *block = blockHead;
-        printf("head is not null\n");
         while (block != NULL)
         {
-            printf("c");
-            printf("bc:%s",block->content);
+            printf("%s", block->content);
             block = block->nextInfile;
         }
-        printf("d");
     }
 }
 
 void printAllBlocks(BlockManager *bm)
 {
     printf("BlockManager:\n");
-    for (int i = 0; i < bm->block_count; i++)
+    Block* block = bm->blocks;
+    int count = 0;
+    while (block != NULL)
     {
-        printf("Block %d: %s\n", i, bm->blocks[i].content);
+        printf("Block%d: %s\n", count, block->content);
+        block = block->nextInBlockManager;
+        count++;
     }
 }
 
 void printAllInodes(INodeManager *im)
 {
     printf("INodeManager:\n");
-    for (int i = 0; i < im->iNode_count; i++)
+    INode* iNode = im->iNodes;
+    int count = 0;
+    while (iNode != NULL)
     {
-        printf("INode %d: %s\n", i, im->iNodes[i].filename);
+        printf("INode%d: %s\n", count, iNode->filename);
+        iNode = iNode->nextINode;
+        count++;
     }
 }
 
@@ -264,7 +290,7 @@ int main()
     printAllUsers(&userManager);
     printAllBlocks(&blockManager);
     printAllInodes(&inodeManager);
-    // printFile(workDir, "0tEsKcHiy_enkQjo2Jpr", "abc", &userManager, &inodeManager);
+    printFile(workDir, "0tEsKcHiy_enkQjo2Jpr", "abc", &userManager, &inodeManager);
 
     return 0;
 }
