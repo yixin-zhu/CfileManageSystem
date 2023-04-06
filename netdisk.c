@@ -130,7 +130,7 @@ int findUserIdByName(char *userName, UserManager *um)
 
 struct block *saveFileToBlocks(char *composeFileName, BlockManager *bm)
 {
-    FILE *fp = fopen(composeFileName, "r");
+    FILE *fp = fopen(composeFileName, "rb");
     Block *headBlock = NULL;
     if (fp == NULL)
     {
@@ -260,6 +260,7 @@ void printFile(char *workDir, char *userName, char *fileName, UserManager *um, I
             printf("%s", block->content);
             block = block->nextInfile;
         }
+        printf("\n");
     }
 }
 
@@ -303,6 +304,44 @@ void initBlockManager(BlockManager *bm)
     bm->block_count = 0;
 }
 
+void interact(UserManager *um, BlockManager *bm, INodeManager *im, char *workDir)
+{
+    const char s[2] = " ";
+    char str[100];
+    char *userName;
+    while (1)
+    {
+        printf("Please input your command: ");
+        scanf("%[^\n]", str);
+        char *command = strtok(str, s);
+        if (strcmp(command, "login") == 0)
+        {
+            userName = strtok(NULL, s);
+            printf("You have logged in as %s.\n", userName);
+        }
+        else if (strcmp(command, "getfile") == 0)
+        {
+            char *userName = strtok(NULL, s);
+            char *fileName = strtok(NULL, s);
+            printFile(workDir, userName, fileName, um, im);
+        }
+        else if (strcmp(command, "help") == 0)
+        {
+            printf("HELP:\n");
+        }
+        else if (strcmp(command, "exit") == 0)
+        {
+            printf("Goodbye!");
+            break;
+        }
+        else
+        {
+            printf("Wrong command! Please enter again!\n");
+        }
+        getchar();
+    }
+}
+
 int main()
 {
     char *workDir = "work";
@@ -311,10 +350,14 @@ int main()
     INodeManager inodeManager = {NULL, 0};
     initBlockManager(&blockManager);
     saveWorkDir(workDir, &userManager, &blockManager, &inodeManager);
+
+    interact(&userManager, &blockManager, &inodeManager, workDir);
+    /*
+    
     printAllUsers(&userManager);
     printAllBlocks(&blockManager);
     printAllInodes(&inodeManager);
     printFile(workDir, "0tEsKcHiy_enkQjo2Jpr", "abc", &userManager, &inodeManager);
-
+    */
     return 0;
 }
