@@ -1,5 +1,5 @@
 #ifdef DEBUG
-#define debug(str) printf("%s\n",str)
+#define debug(str) printf("%s\n", str)
 #else
 #define debug(str) /* do nothing */
 #endif
@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 
 #define BLOCK_SIZE 64
+#define SUB_BLOCK_MANAGWER_NUM 3
+
 typedef struct block
 {
     char *content; // 块的内容
@@ -18,9 +20,14 @@ typedef struct block
     struct block *nextInBlockManager;
 } Block;
 
-typedef struct block_manager
+typedef struct sub_block_manager
 {
     Block *blocks;
+} SubBlockManager;
+
+typedef struct block_manager
+{
+    SubBlockManager *submanagers[SUB_BLOCK_MANAGWER_NUM];
     int block_count;
 } BlockManager;
 
@@ -139,17 +146,19 @@ struct block *saveFileToBlocks(char *composeFileName, BlockManager *bm)
             Block *newBlock = (Block *)malloc(sizeof(Block));
             newBlock->content = assignValue(newBlock->content, content);
             newBlock->nextInfile = NULL;
+            int last = (index + SUB_BLOCK_MANAGWER_NUM - 1) % SUB_BLOCK_MANAGWER_NUM;
+            int current = index % SUB_BLOCK_MANAGWER_NUM;
             if (flag > 0)
             {
-                bm->blocks->nextInfile = newBlock;
+                bm->submanagers[last]->blocks->nextInfile = newBlock;
             }
             else
             {
                 headBlock = newBlock;
                 flag = 1;
             }
-            newBlock->nextInBlockManager = bm->blocks;
-            bm->blocks = newBlock;
+            newBlock->nextInBlockManager = bm->submanagers[current]->blocks;
+            bm->submanagers[current]->blocks = newBlock;
             index++;
         }
         bm->block_count = index;
@@ -257,20 +266,24 @@ void printFile(char *workDir, char *userName, char *fileName, UserManager *um, I
 void printAllBlocks(BlockManager *bm)
 {
     printf("BlockManager:\n");
-    Block* block = bm->blocks;
-    int count = 0;
-    while (block != NULL)
+    for (int i = 0; i < SUB_BLOCK_MANAGWER_NUM; i++)
     {
-        printf("Block%d: %s\n", count, block->content);
-        block = block->nextInBlockManager;
-        count++;
+        printf("SubBlockManager%d:\n", i);
+        Block *block = bm->submanagers[i]->blocks;
+        int count = 0;
+        while (block != NULL)
+        {
+            printf("Block%d: %s\n", count, block->content);
+            block = block->nextInBlockManager;
+            count++;
+        }
     }
 }
 
 void printAllInodes(INodeManager *im)
 {
     printf("INodeManager:\n");
-    INode* iNode = im->iNodes;
+    INode *iNode = im->iNodes;
     int count = 0;
     while (iNode != NULL)
     {
@@ -280,12 +293,23 @@ void printAllInodes(INodeManager *im)
     }
 }
 
+void initBlockManager(BlockManager *bm)
+{
+    for (int i = 0; i < SUB_BLOCK_MANAGWER_NUM; i++)
+    {
+        bm->submanagers[i] = (SubBlockManager *)malloc(sizeof(SubBlockManager));
+        bm->submanagers[i]->blocks = NULL;
+    }
+    bm->block_count = 0;
+}
+
 int main()
 {
     char *workDir = "work";
     BlockManager blockManager = {NULL, 0};
     UserManager userManager = {NULL, 0};
     INodeManager inodeManager = {NULL, 0};
+    initBlockManager(&blockManager);
     saveWorkDir(workDir, &userManager, &blockManager, &inodeManager);
     printAllUsers(&userManager);
     printAllBlocks(&blockManager);
